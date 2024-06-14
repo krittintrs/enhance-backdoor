@@ -7,7 +7,7 @@ import time
 def receive_all(sock, count):
     buf = b''
     while count:
-        newbuf = sock.recv(count)
+        newbuf, _ = sock.recvfrom(count)
         if not newbuf: return None
         buf += newbuf
         count -= len(newbuf)
@@ -18,11 +18,11 @@ def main():
     host_ip = '192.168.202.162'
     port = 9999
     server_socket.bind((host_ip, port))
-    server_socket.listen(5)
+    # server_socket.listen(5)
     print("Listening at:", (host_ip, port))
 
-    client_socket, addr = server_socket.accept()
-    print('Connection from:', addr)
+    # client_socket, addr = server_socket.accept()
+    # print('Connection from:', addr)
 
     cv2.namedWindow('Received', cv2.WINDOW_NORMAL)  # Initialize the window once
 
@@ -30,11 +30,14 @@ def main():
         t0 = time.time()
         n_frames = 1
         while True:
-            message_size = receive_all(client_socket, struct.calcsize(">L"))
+            # Receive the message size
+            message_size, client_addr = server_socket.recvfrom(struct.calcsize(">L"))
             if not message_size:
                 break
             message_size = struct.unpack(">L", message_size)[0]
-            frame_data = receive_all(client_socket, message_size)
+
+            # Receive the frame data
+            frame_data = receive_all(server_socket, message_size)
             if not frame_data:
                 break
                 
@@ -52,7 +55,6 @@ def main():
             n_frames += 1
     finally:
         cv2.destroyAllWindows()
-        client_socket.close()
         server_socket.close()
 
 if __name__ == "__main__":
