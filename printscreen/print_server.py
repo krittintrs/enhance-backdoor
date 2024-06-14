@@ -2,6 +2,7 @@ import cv2
 import socket
 import numpy as np
 import struct
+import time
 
 def receive_all(sock, count):
     buf = b''
@@ -14,7 +15,7 @@ def receive_all(sock, count):
 
 def main():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host_ip = '127.0.0.1'
+    host_ip = '192.168.202.162'
     port = 9999
     server_socket.bind((host_ip, port))
     server_socket.listen(5)
@@ -26,6 +27,8 @@ def main():
     cv2.namedWindow('Received', cv2.WINDOW_NORMAL)  # Initialize the window once
 
     try:
+        t0 = time.time()
+        n_frames = 1
         while True:
             message_size = receive_all(client_socket, struct.calcsize(">L"))
             if not message_size:
@@ -41,6 +44,11 @@ def main():
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+
+            elapsed_time = time.time() - t0
+            avg_fps = (n_frames / elapsed_time)
+            print("Average FPS: " + str(avg_fps))
+            n_frames += 1
     finally:
         cv2.destroyAllWindows()
         client_socket.close()
