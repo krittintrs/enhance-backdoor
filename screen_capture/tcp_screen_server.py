@@ -15,7 +15,7 @@ def receive_all(sock, count):
 
 def main():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host_ip = '192.168.202.162'
+    host_ip = '127.0.0.1'
     port = 9999
     server_socket.bind((host_ip, port))
     server_socket.listen(5)
@@ -45,6 +45,7 @@ def main():
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
+            # perf test
             elapsed_time = time.time() - t0
             avg_fps = (n_frames / elapsed_time)
             print("Average FPS: " + str(avg_fps))
