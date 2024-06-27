@@ -4,6 +4,7 @@ opencv_python==4.10.0.82
 PyAudio==0.2.14
 PyAutoGUI==0.9.54
 pynput==1.7.7
+python-dotenv==1.0.1
 scipy==1.14.0
 sounddevice==0.4.7
 wavio==0.0.9
