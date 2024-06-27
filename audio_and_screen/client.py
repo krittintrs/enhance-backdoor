@@ -17,7 +17,7 @@ CHANNELS = 1
 RATE = 44100
 VIDEO_PORT = 9999
 AUDIO_PORT = 6666
-host_ip = '127.0.0.1'  # Replace with server IP address
+host_ip = '192.168.203.142'  # Replace with server IP address
 
 def screen_stream(client_socket):
     w, h = pyautogui.size()

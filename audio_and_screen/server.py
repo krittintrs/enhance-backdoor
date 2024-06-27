@@ -13,7 +13,7 @@ CHANNELS = 1
 RATE = 44100
 VIDEO_PORT = 9999
 AUDIO_PORT = 6666
-host_ip = '127.0.0.1'  # Replace with server IP address
+host_ip = '192.168.202.181'  # Replace with server IP address
 
 # Helper function to receive data
 def receive_all(sock, count):
