@@ -10,6 +10,7 @@ import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
 
+# target_ip = '192.168.203.142'
 target_ip = '127.0.0.1'
 target_port = 5555
 reconnection_delay = 1

@@ -8,6 +8,7 @@ import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
 
+# target_ip = '192.168.202.181'
 target_ip = '127.0.0.1'
 target_port = 5555
 
