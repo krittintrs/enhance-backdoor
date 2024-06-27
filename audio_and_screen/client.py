@@ -5,8 +5,10 @@ import mss
 import numpy as np
 import struct
 import pyaudio
-import time
+import sounddevice as sd
 import threading
+import queue
+import time
 
 # Constants
 CHUNK = 1024
@@ -55,29 +57,41 @@ def audio_stream(client_socket):
                     rate=RATE,
                     input=True,
                     frames_per_buffer=CHUNK)
-    try:
-        print("Recording audio...")
-        while True:
-            try:
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                message = struct.pack(">L", len(data)) + data
+    
+    speaker_queue = queue.Queue()
+    
+    def callback(indata, frames, time, status):
+        if status:
+            print(status)
+        speaker_queue.put(indata.copy())
+
+    with sd.InputStream(callback=callback, channels=CHANNELS, samplerate=RATE, blocksize=CHUNK):
+        try:
+            print("Recording audio...")
+            while True:
                 try:
-                    client_socket.sendall(message)
-                except BrokenPipeError:
-                    print("Broken pipe error, connection lost.")
-                    break
-            except IOError as e:
-                if e.errno == -9981:
-                    print("Buffer overflowed. Skipping this chunk.")
-                else:
-                    raise
-    except KeyboardInterrupt:
-        print("Audio stream stopped by user.")
-    finally:
-        client_socket.close()
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+                    mic_data = stream.read(CHUNK, exception_on_overflow=False)
+                    speaker_data = speaker_queue.get()
+                    mixed_data = np.frombuffer(mic_data, dtype=np.int16) + speaker_data.flatten()
+                    mixed_data = np.clip(mixed_data, -32768, 32767).astype(np.int16).tobytes()
+                    message = struct.pack(">L", len(mixed_data)) + mixed_data
+                    try:
+                        client_socket.sendall(message)
+                    except BrokenPipeError:
+                        print("Broken pipe error, connection lost.")
+                        break
+                except IOError as e:
+                    if e.errno == -9981:
+                        print("Buffer overflowed. Skipping this chunk.")
+                    else:
+                        raise
+        except KeyboardInterrupt:
+            print("Audio stream stopped by user.")
+        finally:
+            client_socket.close()
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
 
 def main():
     host_ip = '127.0.0.1'  # Replace with server IP address
