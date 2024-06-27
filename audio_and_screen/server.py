@@ -13,6 +13,7 @@ CHANNELS = 1
 RATE = 44100
 VIDEO_PORT = 9999
 AUDIO_PORT = 6666
+host_ip = '127.0.0.1'  # Replace with server IP address
 
 # Helper function to receive data
 def receive_all(sock, count):
@@ -75,7 +76,6 @@ def audio_stream(server_socket):
         p.terminate()
 
 def main():
-    host_ip = '127.0.0.1'
 
     # Video streaming
     video_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
