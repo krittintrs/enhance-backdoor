@@ -14,8 +14,8 @@ def receive_all(sock, count):
     return buf
 
 def main():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    host_ip = '192.168.202.162'
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host_ip = '127.0.0.1'
     port = 9999
     server_socket.bind((host_ip, port))
     # server_socket.listen(5)
