@@ -1,5 +1,8 @@
 mss==9.0.1
-numpy==1.26.4
+numpy==2.0.0
 opencv_python==4.10.0.82
-Pillow==10.3.0
+PyAudio==0.2.14
 PyAutoGUI==0.9.54
+scipy==1.14.0
+sounddevice==0.4.7
+wavio==0.0.9
