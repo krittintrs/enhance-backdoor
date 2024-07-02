@@ -9,7 +9,7 @@ pip install -r requirements.txt
 ## command
 1. `screen`                   :to enable screen streaming and audio capturing
 2. `keylogger`                :to enable keylogger
-3. `escalate {user}`          :to escalate the specific user on target's machine's , replace {user} w/ user that you want to escalate
+3. `escalate {user}`          :to escalate the specific user on target's machine's , replace {user} w/ user that you want to escalate (if you don't know the user, use `whoami` command)
 4. `quit`                     :to stop everything
 5. `cd {path}`                :to change current directory
 6. `clear`                    :to clear the output in terminal
