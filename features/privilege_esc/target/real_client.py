@@ -23,17 +23,7 @@ def reliable_recv():
 
 ## use for find vulnability of suid 
 ## NOTE THAT : we use /usr/bin/pkexec
-def find_suid_binaries():
-    suid_files = []
-    for root, dirs, files in os.walk('/'):
-        for name in files:
-            filepath = os.path.join(root, name)
-            try:
-                if os.stat(filepath).st_mode & 0o4000:
-                    suid_files.append(filepath)
-            except:
-                continue
-    return suid_files
+
 
 def shell():
     esc_process = None

